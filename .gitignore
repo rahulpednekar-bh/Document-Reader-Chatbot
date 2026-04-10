@@ -1,0 +1,33 @@
+# Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# .NET / Azure Functions
+backend/**/bin/
+backend/**/obj/
+backend/**/*.user
+backend/**/local.settings.json
+
+# Azure Functions local state
+backend/**/.python_packages/
+backend/**/appsettings.Development.json
+
+# Environment / secrets
+*.env
+.env.*
+local.settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
+npm-debug.log*

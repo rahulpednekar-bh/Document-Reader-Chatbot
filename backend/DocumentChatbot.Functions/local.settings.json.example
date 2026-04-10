@@ -1,0 +1,19 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "<storage-account-connection-string>",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "AzureFoundry__ConnectionString": "<ai-foundry-project-connection-string>",
+    "AzureFoundry__AgentId": "<agent-id-from-foundry>",
+    "AzureFoundry__VectorStoreId": "<vector-store-id-from-foundry>",
+    "BlobStorage__ConnectionString": "<storage-account-connection-string>",
+    "BlobStorage__ContainerName": "documents",
+    "CosmosDB__ConnectionString": "<cosmos-db-connection-string>",
+    "CosmosDB__DatabaseName": "docreader"
+  },
+  "Host": {
+    "LocalHttpPort": 7071,
+    "CORS": "http://localhost:4200",
+    "CORSCredentials": false
+  }
+}
