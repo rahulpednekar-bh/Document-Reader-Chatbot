@@ -49,7 +49,7 @@ public class ChatService : IChatService
             .OrderBy(m => m.CreatedAt)
             .Select(m => new MessageDto(
                 m.Role.ToString().ToLower(),
-                m.ContentItems.OfType<MessageTextContent>().FirstOrDefault()?.Text.Value ?? string.Empty,
+                m.ContentItems.OfType<MessageTextContent>().FirstOrDefault()?.Text ?? string.Empty,
                 m.CreatedAt))
             .ToList();
     }
@@ -77,13 +77,13 @@ public class ChatService : IChatService
 
         var messages = await agentsClient.GetMessagesAsync(session.ThreadId);
         var assistantMessage = messages.Value.Data
-            .Where(m => m.Role == MessageRole.Assistant)
+            .Where(m => m.Role == MessageRole.Agent)
             .OrderByDescending(m => m.CreatedAt)
             .First();
 
         var responseText = assistantMessage.ContentItems
             .OfType<MessageTextContent>()
-            .FirstOrDefault()?.Text.Value ?? string.Empty;
+            .FirstOrDefault()?.Text ?? string.Empty;
 
         return new SendMessageResponse(
             new MessageDto("assistant", responseText, assistantMessage.CreatedAt));

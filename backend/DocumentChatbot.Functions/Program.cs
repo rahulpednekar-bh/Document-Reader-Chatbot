@@ -13,9 +13,6 @@ var host = new HostBuilder()
     {
         var config = context.Configuration;
 
-        services.AddApplicationInsightsTelemetryWorkerService();
-        services.ConfigureFunctionsApplicationInsights();
-
         // Azure AI Foundry Agents client
         services.AddSingleton(_ =>
             new AIProjectClient(
