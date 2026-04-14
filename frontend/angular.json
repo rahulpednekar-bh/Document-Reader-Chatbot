@@ -61,13 +61,11 @@
               "buildTarget": "document-reader-chatbot:build:production"
             },
             "development": {
-              "buildTarget": "document-reader-chatbot:build:development"
+              "buildTarget": "document-reader-chatbot:build:development",
+              "proxyConfig": "proxy.conf.json"
             }
           },
-          "defaultConfiguration": "development",
-          "options": {
-            "proxyConfig": "proxy.conf.json"
-          }
+          "defaultConfiguration": "development"
         }
       }
     }

@@ -7,25 +7,30 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
+// In the Azure Functions isolated worker model, local.settings.json Values are
+// loaded as environment variables by `func start`. Read them via
+// Environment.GetEnvironmentVariable, not IConfiguration.
+static string Env(string key) =>
+    Environment.GetEnvironmentVariable(key)
+    ?? throw new InvalidOperationException($"Missing required configuration: '{key}'");
+
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
     .ConfigureServices((context, services) =>
     {
-        var config = context.Configuration;
-
         // Azure AI Foundry Agents client
         services.AddSingleton(_ =>
             new AIProjectClient(
-                config["AzureFoundry__ConnectionString"]!,
+                Env("AzureFoundry__ConnectionString"),
                 new DefaultAzureCredential()));
 
         // Azure Blob Storage
         services.AddSingleton(_ =>
-            new BlobServiceClient(config["BlobStorage__ConnectionString"]));
+            new BlobServiceClient(Env("BlobStorage__ConnectionString")));
 
         // Azure Cosmos DB
         services.AddSingleton(_ =>
-            new CosmosClient(config["CosmosDB__ConnectionString"]));
+            new CosmosClient(Env("CosmosDB__ConnectionString")));
 
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IChatService, ChatService>();
