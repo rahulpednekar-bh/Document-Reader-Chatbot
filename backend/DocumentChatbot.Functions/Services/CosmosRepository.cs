@@ -1,5 +1,4 @@
 using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.Configuration;
 
 namespace DocumentChatbot.Functions.Services;
 
@@ -8,10 +7,11 @@ public class CosmosRepository : ICosmosRepository
     private readonly CosmosClient _client;
     private readonly string _databaseName;
 
-    public CosmosRepository(CosmosClient client, IConfiguration config)
+    public CosmosRepository(CosmosClient client)
     {
         _client = client;
-        _databaseName = config["CosmosDB__DatabaseName"]!;
+        _databaseName = Environment.GetEnvironmentVariable("CosmosDB__DatabaseName")
+            ?? throw new InvalidOperationException("CosmosDB__DatabaseName is not configured.");
     }
 
     public async Task UpsertAsync<T>(string containerName, T item) where T : class

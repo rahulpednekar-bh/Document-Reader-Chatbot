@@ -2,7 +2,6 @@ using Azure.AI.Projects;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using DocumentChatbot.Functions.Models;
-using Microsoft.Extensions.Configuration;
 
 namespace DocumentChatbot.Functions.Services;
 
@@ -20,14 +19,15 @@ public class DocumentService : IDocumentService
     public DocumentService(
         BlobServiceClient blobServiceClient,
         AIProjectClient foundryClient,
-        ICosmosRepository cosmos,
-        IConfiguration config)
+        ICosmosRepository cosmos)
     {
         _blobServiceClient = blobServiceClient;
         _foundryClient = foundryClient;
         _cosmos = cosmos;
-        _containerName = config["BlobStorage__ContainerName"]!;
-        _vectorStoreId = config["AzureFoundry__VectorStoreId"]!;
+        _containerName = Environment.GetEnvironmentVariable("BlobStorage__ContainerName")
+            ?? throw new InvalidOperationException("BlobStorage__ContainerName is not configured.");
+        _vectorStoreId = Environment.GetEnvironmentVariable("AzureFoundry__VectorStoreId")
+            ?? throw new InvalidOperationException("AzureFoundry__VectorStoreId is not configured.");
     }
 
     public async Task<UploadDocumentResponse> UploadAsync(Stream fileStream, string fileName, long sizeBytes)

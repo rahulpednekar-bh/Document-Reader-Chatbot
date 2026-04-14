@@ -1,6 +1,5 @@
 using Azure.AI.Projects;
 using DocumentChatbot.Functions.Models;
-using Microsoft.Extensions.Configuration;
 
 namespace DocumentChatbot.Functions.Services;
 
@@ -10,11 +9,12 @@ public class ChatService : IChatService
     private readonly ICosmosRepository _cosmos;
     private readonly string _agentId;
 
-    public ChatService(AIProjectClient foundryClient, ICosmosRepository cosmos, IConfiguration config)
+    public ChatService(AIProjectClient foundryClient, ICosmosRepository cosmos)
     {
         _foundryClient = foundryClient;
         _cosmos = cosmos;
-        _agentId = config["AzureFoundry__AgentId"]!;
+        _agentId = Environment.GetEnvironmentVariable("AzureFoundry__AgentId")
+            ?? throw new InvalidOperationException("AzureFoundry__AgentId is not configured.");
     }
 
     public async Task<CreateSessionResponse> CreateSessionAsync(string? title)
