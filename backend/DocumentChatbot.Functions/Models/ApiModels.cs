@@ -10,6 +10,8 @@ public record DeleteDocumentsRequest(IReadOnlyList<string> DocumentIds);
 
 public record SendMessageRequest(string Content);
 
-public record MessageDto(string Role, string Content, DateTimeOffset CreatedAt);
+public record DocumentCitation(string FileName, IReadOnlyList<int> PageNumbers);
+
+public record MessageDto(string Role, string Content, DateTimeOffset CreatedAt, IReadOnlyList<DocumentCitation> Citations);
 
 public record SendMessageResponse(MessageDto AssistantMessage);

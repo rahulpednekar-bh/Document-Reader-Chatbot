@@ -5,10 +5,16 @@ export interface ChatSession {
   createdAt: string;
 }
 
+export interface DocumentCitation {
+  fileName: string;
+  pageNumbers: number[];
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  citations?: DocumentCitation[];
 }
 
 export interface SendMessageResponse {

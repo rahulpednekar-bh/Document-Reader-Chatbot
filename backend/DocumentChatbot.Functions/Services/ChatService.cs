@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Azure.AI.Projects;
 using DocumentChatbot.Functions.Models;
 
@@ -5,6 +6,8 @@ namespace DocumentChatbot.Functions.Services;
 
 public class ChatService : IChatService
 {
+    private static readonly Regex FoundryMarkerRegex = new(@"【\d+:\d+†[^】]*】", RegexOptions.Compiled);
+
     private readonly AIProjectClient _foundryClient;
     private readonly ICosmosRepository _cosmos;
     private readonly string _agentId;
@@ -45,13 +48,18 @@ public class ChatService : IChatService
         var agentsClient = _foundryClient.GetAgentsClient();
         var messagesResponse = await agentsClient.GetMessagesAsync(session.ThreadId);
 
-        return messagesResponse.Value.Data
-            .OrderBy(m => m.CreatedAt)
-            .Select(m => new MessageDto(
-                m.Role.ToString().ToLower(),
-                m.ContentItems.OfType<MessageTextContent>().FirstOrDefault()?.Text ?? string.Empty,
-                m.CreatedAt))
-            .ToList();
+        var result = new List<MessageDto>();
+        foreach (var m in messagesResponse.Value.Data.OrderBy(m => m.CreatedAt))
+        {
+            var role = m.Role == MessageRole.Agent ? "assistant" : "user";
+            var textContent = m.ContentItems.OfType<MessageTextContent>().FirstOrDefault();
+            var text = CleanContent(textContent?.Text ?? string.Empty);
+            var citations = role == "assistant"
+                ? await ExtractCitationsAsync(agentsClient, m.ContentItems)
+                : Array.Empty<DocumentCitation>();
+            result.Add(new MessageDto(role, text, m.CreatedAt, citations));
+        }
+        return result;
     }
 
     public async Task<SendMessageResponse> SendMessageAsync(string sessionId, string content)
@@ -81,11 +89,95 @@ public class ChatService : IChatService
             .OrderByDescending(m => m.CreatedAt)
             .First();
 
-        var responseText = assistantMessage.ContentItems
-            .OfType<MessageTextContent>()
-            .FirstOrDefault()?.Text ?? string.Empty;
+        var textContent = assistantMessage.ContentItems.OfType<MessageTextContent>().FirstOrDefault();
+        var responseText = CleanContent(textContent?.Text ?? string.Empty);
+        var citations = await ExtractCitationsAsync(agentsClient, assistantMessage.ContentItems);
 
         return new SendMessageResponse(
-            new MessageDto("assistant", responseText, assistantMessage.CreatedAt));
+            new MessageDto("assistant", responseText, assistantMessage.CreatedAt, citations));
+    }
+
+    private static string CleanContent(string text) =>
+        FoundryMarkerRegex.Replace(text, string.Empty).Trim();
+
+    private static async Task<IReadOnlyList<DocumentCitation>> ExtractCitationsAsync(
+        AgentsClient agentsClient, IReadOnlyList<MessageContent> contentItems)
+    {
+        var textContent = contentItems.OfType<MessageTextContent>().FirstOrDefault();
+        if (textContent is null) return Array.Empty<DocumentCitation>();
+
+        var annotations = textContent.Annotations.OfType<MessageTextFileCitationAnnotation>().ToList();
+        if (annotations.Count == 0) return Array.Empty<DocumentCitation>();
+
+        var fullText = textContent.Text;
+
+        // Group all annotations by FileId so we collect page numbers from every
+        // occurrence of the same file, not just the first.
+        var fileOrder = new List<string>();
+        var pagesByFile = new Dictionary<string, SortedSet<int>>(StringComparer.Ordinal);
+
+        foreach (var annotation in annotations)
+        {
+            var fileId = annotation.FileId;
+            if (!pagesByFile.ContainsKey(fileId))
+            {
+                pagesByFile[fileId] = new SortedSet<int>();
+                fileOrder.Add(fileId);
+            }
+
+            // 1. Search the quoted chunk for "page N" patterns.
+            CollectPageMatches(pagesByFile[fileId], annotation.Quote);
+
+            // 2. Search the response text in the window immediately before this
+            //    citation marker — the AI often says "on page 5..." right before
+            //    inserting the inline reference marker.
+            if (annotation.StartIndex.HasValue)
+            {
+                var windowStart = Math.Max(0, annotation.StartIndex.Value - 400);
+                var context = fullText.Substring(windowStart, annotation.StartIndex.Value - windowStart);
+                CollectPageMatches(pagesByFile[fileId], context);
+            }
+        }
+
+        var citations = new List<DocumentCitation>();
+        foreach (var fileId in fileOrder)
+        {
+            string fileName;
+            try
+            {
+                var fileInfo = await agentsClient.GetFileAsync(fileId);
+                fileName = fileInfo.Value.Filename;
+            }
+            catch
+            {
+                fileName = fileId; // fallback to ID if lookup fails
+            }
+
+            citations.Add(new DocumentCitation(fileName, pagesByFile[fileId].ToList()));
+        }
+
+        return citations;
+    }
+
+    private static void CollectPageMatches(SortedSet<int> pages, string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        // Matches: "page 3", "pages 3-5", "pages 3–5", "page 3, 4"
+        var matches = Regex.Matches(text, @"\bpage[s]?\s+(\d+)(?:\s*[-–,]\s*(\d+))?", RegexOptions.IgnoreCase);
+        foreach (Match m in matches)
+        {
+            if (int.TryParse(m.Groups[1].Value, out var start))
+            {
+                if (m.Groups[2].Success && int.TryParse(m.Groups[2].Value, out var end))
+                {
+                    for (var p = start; p <= end; p++) pages.Add(p);
+                }
+                else
+                {
+                    pages.Add(start);
+                }
+            }
+        }
     }
 }

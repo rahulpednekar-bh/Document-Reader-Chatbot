@@ -111,6 +111,26 @@ GET /api/sessions          → reads session list from Cosmos DB
 GET /api/sessions/{id}/messages → reads Thread messages from Foundry API
 ```
 
+### Document Citations
+
+Each assistant message returned by `GET /api/sessions/{id}/messages` and `POST /api/sessions/{id}/messages` includes a `citations` array with the source documents the Agent referenced:
+
+```
+citations: [
+  { fileName: "report.pdf", pageNumbers: [3, 5] },
+  { fileName: "manual.docx", pageNumbers: [] }
+]
+```
+
+**Extraction process (backend):**
+1. Each `MessageTextContent` exposes an `Annotations` list containing `MessageTextFileCitationAnnotation` items
+2. Annotations are deduplicated by `FileId` (same file cited multiple times → one citation entry)
+3. `AgentsClient.GetFileAsync(fileId)` resolves the file name
+4. Page numbers are extracted by regex from `FileCitation.Quote` (matches "page N" / "pages N–M" patterns); empty list if no pages mentioned
+5. Foundry inline markers (e.g. `【4:0†source】`) are stripped from the response text before returning
+
+**Display (frontend):** A "Sources:" row with Material chips appears below each assistant message bubble when `citations.length > 0`. Each chip shows the document icon, file name, and optional page numbers.
+
 ## Security
 
 - All backend-to-Azure-service calls use Managed Identity (`DefaultAzureCredential`) — no secrets in code or config
