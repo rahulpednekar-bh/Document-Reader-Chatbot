@@ -25,7 +25,7 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
 - CORS configured to allow the Angular origin
 - Two function files:
   - `DocumentFunctions` — upload, list, get status, bulk delete
-  - `ChatFunctions` — create session, list sessions, get messages, send message
+  - `ChatFunctions` — create session, list sessions, get messages, send message, delete session
 - Dependency injection via `Program.cs` using `HostBuilder`
 - All Azure service clients authenticated via `DefaultAzureCredential`
 
@@ -80,6 +80,20 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
    d. Reads the assistant message from the Thread
    e. Returns { role: "assistant", content: "..." }
 5. Angular renders the response (with markdown support)
+```
+
+### Session Deletion
+
+```
+1. User hovers over a session row in the sidebar → trash icon appears
+2. User clicks the icon → browser confirm dialog warns deletion is permanent
+3. Angular DELETE /api/sessions/{id}
+4. Function (ChatFunctions.DeleteSession):
+   a. Reads ChatSession from Cosmos DB (no-op if not found)
+   b. Calls AgentsClient.DeleteThreadAsync → removes the Foundry Thread and all messages
+   c. Deletes ChatSession from Cosmos DB
+5. Angular removes the session from the list
+   - If the deleted session was active, clears the chat window and shows the empty state
 ```
 
 ### Document Deletion

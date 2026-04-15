@@ -97,6 +97,17 @@ public class ChatService : IChatService
             new MessageDto("assistant", responseText, assistantMessage.CreatedAt, citations));
     }
 
+    public async Task DeleteSessionAsync(string sessionId)
+    {
+        var session = await _cosmos.GetAsync<ChatSession>("sessions", sessionId);
+        if (session is null) return;
+
+        var agentsClient = _foundryClient.GetAgentsClient();
+        try { await agentsClient.DeleteThreadAsync(session.ThreadId); } catch { }
+
+        await _cosmos.DeleteAsync("sessions", sessionId);
+    }
+
     private static string CleanContent(string text) =>
         FoundryMarkerRegex.Replace(text, string.Empty).Trim();
 

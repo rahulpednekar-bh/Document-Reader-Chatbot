@@ -27,4 +27,8 @@ export class ChatService {
       { content }
     );
   }
+
+  deleteSession(sessionId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/sessions/${sessionId}`);
+  }
 }

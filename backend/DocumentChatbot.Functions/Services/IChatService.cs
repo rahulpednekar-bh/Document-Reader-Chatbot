@@ -8,4 +8,5 @@ public interface IChatService
     Task<IReadOnlyList<ChatSession>> ListSessionsAsync();
     Task<IReadOnlyList<MessageDto>> GetMessagesAsync(string sessionId);
     Task<SendMessageResponse> SendMessageAsync(string sessionId, string content);
+    Task DeleteSessionAsync(string sessionId);
 }

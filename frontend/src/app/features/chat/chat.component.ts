@@ -15,7 +15,8 @@ import { ChatInputComponent } from './chat-input/chat-input.component';
         [sessions]="sessions()"
         [activeSessionId]="activeSession()?.id ?? null"
         (sessionSelected)="onSessionSelected($event)"
-        (newSession)="onNewSession()" />
+        (newSession)="onNewSession()"
+        (sessionDeleted)="onSessionDeleted($event)" />
 
       <div class="chat-main">
         @if (activeSession()) {
@@ -75,6 +76,23 @@ export class ChatComponent implements OnInit {
   onSessionSelected(session: ChatSession): void {
     this.activeSession.set(session);
     this.chatService.getMessages(session.id).subscribe(msgs => this.messages.set(msgs));
+  }
+
+  onSessionDeleted(session: ChatSession): void {
+    if (!confirm(`Delete "${session.title}"? This will permanently remove the chat history and cannot be undone.`)) {
+      return;
+    }
+
+    this.chatService.deleteSession(session.id).subscribe({
+      next: () => {
+        this.sessions.update(s => s.filter(x => x.id !== session.id));
+        if (this.activeSession()?.id === session.id) {
+          this.activeSession.set(null);
+          this.messages.set([]);
+        }
+      },
+      error: err => console.error('Failed to delete session:', err)
+    });
   }
 
   onMessageSent(content: string): void {

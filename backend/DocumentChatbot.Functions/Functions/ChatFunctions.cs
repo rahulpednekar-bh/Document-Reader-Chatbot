@@ -60,6 +60,23 @@ public class ChatFunctions
         }
     }
 
+    [Function("DeleteSession")]
+    public async Task<HttpResponseData> DeleteSessionAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "sessions/{sessionId}")] HttpRequestData req,
+        string sessionId)
+    {
+        try
+        {
+            await _chatService.DeleteSessionAsync(sessionId);
+            return req.CreateResponse(HttpStatusCode.NoContent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting session {SessionId}.", sessionId);
+            return await Error(req, "Failed to delete session.");
+        }
+    }
+
     [Function("SendMessage")]
     public async Task<HttpResponseData> SendMessageAsync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sessions/{sessionId}/messages")] HttpRequestData req,

@@ -4,12 +4,13 @@ import { MatListModule } from '@angular/material/list';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChatSession } from '../../../core/models/chat.model';
 
 @Component({
   selector: 'app-chat-history-sidebar',
   standalone: true,
-  imports: [CommonModule, MatListModule, MatButtonModule, MatIconModule, MatDividerModule, DatePipe],
+  imports: [CommonModule, MatListModule, MatButtonModule, MatIconModule, MatDividerModule, MatTooltipModule, DatePipe],
   template: `
     <div class="sidebar">
       <div class="sidebar-header">
@@ -22,10 +23,24 @@ import { ChatSession } from '../../../core/models/chat.model';
         @for (session of sessions; track session.id) {
           <mat-list-item
             [activated]="session.id === activeSessionId"
-            (click)="sessionSelected.emit(session)">
+            (click)="sessionSelected.emit(session)"
+            (mouseenter)="hoveredId = session.id"
+            (mouseleave)="hoveredId = null"
+            class="session-item">
             <mat-icon matListItemIcon>chat_bubble_outline</mat-icon>
             <span matListItemTitle>{{ session.title }}</span>
             <span matListItemLine>{{ session.createdAt | date:'shortDate' }}</span>
+            <span matListItemMeta>
+              @if (hoveredId === session.id || activeSessionId === session.id) {
+                <button
+                  mat-icon-button
+                  class="delete-btn"
+                  matTooltip="Delete session"
+                  (click)="onDelete(session, $event)">
+                  <mat-icon>delete_outline</mat-icon>
+                </button>
+              }
+            </span>
           </mat-list-item>
         }
         @if (sessions.length === 0) {
@@ -58,8 +73,22 @@ import { ChatSession } from '../../../core/models/chat.model';
       font-size: 14px;
       text-align: center;
     }
-    mat-list-item {
+    .session-item {
       cursor: pointer;
+    }
+    .delete-btn {
+      width: 32px;
+      height: 32px;
+      line-height: 32px;
+      color: #9e9e9e;
+    }
+    .delete-btn:hover {
+      color: #f44336;
+    }
+    .delete-btn mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
     }
   `]
 })
@@ -68,4 +97,12 @@ export class ChatHistorySidebarComponent {
   @Input() activeSessionId: string | null = null;
   @Output() sessionSelected = new EventEmitter<ChatSession>();
   @Output() newSession = new EventEmitter<void>();
+  @Output() sessionDeleted = new EventEmitter<ChatSession>();
+
+  hoveredId: string | null = null;
+
+  onDelete(session: ChatSession, event: MouseEvent): void {
+    event.stopPropagation();
+    this.sessionDeleted.emit(session);
+  }
 }
