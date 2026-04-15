@@ -51,7 +51,8 @@ public class DocumentService : IDocumentService
         var uploadedFile = await agentsClient.UploadFileAsync(fileStream, AgentFilePurpose.Agents, fileName);
 
         // Attach file to the shared Vector Store
-        await agentsClient.CreateVectorStoreFileAsync(_vectorStoreId, uploadedFile.Value.Id);
+        var data = await agentsClient.CreateVectorStoreFileAsync(_vectorStoreId, uploadedFile.Value.Id);
+        var data1 = await agentsClient.GetVectorStoreAsync(_vectorStoreId);
 
         var metadata = new DocumentMetadata
         {

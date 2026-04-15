@@ -45,7 +45,10 @@ export class DocumentManagerComponent implements OnInit {
   }
 
   loadDocuments(): void {
-    this.documentService.list().subscribe(docs => this.documents.set(docs));
+    this.documentService.list().subscribe({
+      next: docs => this.documents.set(docs),
+      error: err => console.error('Failed to load documents:', err)
+    });
   }
 
   onDocumentUploaded(doc: DocumentMetadata): void {

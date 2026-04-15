@@ -4,7 +4,7 @@ public record UploadDocumentResponse(string DocumentId, string Status, string Fi
 
 public record CreateSessionRequest(string? Title);
 
-public record CreateSessionResponse(string SessionId, string Title, DateTimeOffset CreatedAt);
+public record CreateSessionResponse(string Id, string Title, DateTimeOffset CreatedAt);
 
 public record SendMessageRequest(string Content);
 
