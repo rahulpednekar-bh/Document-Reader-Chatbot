@@ -46,4 +46,17 @@ public class CosmosRepository : ICosmosRepository
         }
         return results;
     }
+
+    public async Task DeleteAsync(string containerName, string id)
+    {
+        var container = _client.GetContainer(_databaseName, containerName);
+        try
+        {
+            await container.DeleteItemAsync<object>(id, new PartitionKey(id));
+        }
+        catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Already deleted — treat as success
+        }
+    }
 }

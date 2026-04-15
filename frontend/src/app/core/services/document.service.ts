@@ -52,4 +52,10 @@ export class DocumentService {
   get(id: string): Observable<DocumentMetadata> {
     return this.http.get<DocumentMetadata>(`${this.baseUrl}/documents/${id}`);
   }
+
+  delete(ids: string[]): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/documents`, {
+      body: { documentIds: ids }
+    });
+  }
 }

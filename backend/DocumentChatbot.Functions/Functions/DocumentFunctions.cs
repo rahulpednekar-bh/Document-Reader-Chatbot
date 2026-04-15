@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using DocumentChatbot.Functions.Models;
 using DocumentChatbot.Functions.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -69,5 +70,28 @@ public class DocumentFunctions
             return new NotFoundResult();
 
         return new OkObjectResult(document);
+    }
+
+    [Function("DeleteDocuments")]
+    public async Task<IActionResult> DeleteAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "documents")] HttpRequest req)
+    {
+        try
+        {
+            var body = await req.ReadFromJsonAsync<DeleteDocumentsRequest>();
+            if (body is null || body.DocumentIds.Count == 0)
+                return new BadRequestObjectResult(new { error = "At least one document ID is required." });
+
+            await _documentService.DeleteAsync(body.DocumentIds);
+            return new OkResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during document deletion.");
+            return new ObjectResult(new { error = "An unexpected error occurred." })
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
+        }
     }
 }

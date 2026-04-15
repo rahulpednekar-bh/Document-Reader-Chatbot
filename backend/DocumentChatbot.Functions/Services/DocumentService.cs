@@ -76,6 +76,48 @@ public class DocumentService : IDocumentService
     public async Task<DocumentMetadata?> GetAsync(string documentId) =>
         await _cosmos.GetAsync<DocumentMetadata>("documents", documentId);
 
+    public async Task DeleteAsync(IReadOnlyList<string> documentIds)
+    {
+        var agentsClient = _foundryClient.GetAgentsClient();
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
+
+        foreach (var id in documentIds)
+        {
+            var metadata = await _cosmos.GetAsync<DocumentMetadata>("documents", id);
+            if (metadata is null) continue;
+
+            // Remove from Foundry Vector Store
+            if (!string.IsNullOrEmpty(metadata.FoundryFileId))
+            {
+                try
+                {
+                    await agentsClient.DeleteVectorStoreFileAsync(_vectorStoreId, metadata.FoundryFileId);
+                }
+                catch (Exception)
+                {
+                    // File may not be in the vector store; continue cleanup
+                }
+
+                // Delete from Foundry Files API
+                try
+                {
+                    await agentsClient.DeleteFileAsync(metadata.FoundryFileId);
+                }
+                catch (Exception)
+                {
+                    // File may already be deleted; continue cleanup
+                }
+            }
+
+            // Delete blob from Azure Blob Storage
+            var blobClient = containerClient.GetBlobClient($"{id}/{metadata.FileName}");
+            await blobClient.DeleteIfExistsAsync();
+
+            // Delete metadata from Cosmos DB (last, so record persists if earlier steps fail)
+            await _cosmos.DeleteAsync("documents", id);
+        }
+    }
+
     private static void ValidateFile(string fileName, long sizeBytes)
     {
         var extension = Path.GetExtension(fileName).ToLowerInvariant();

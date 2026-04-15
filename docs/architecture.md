@@ -12,7 +12,7 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
 
 - Hosted on **Azure Static Web Apps**
 - Two-tab layout built with Angular Material
-- **Tab 1 (Document Manager):** File upload with drag-drop support, real-time progress bar, and document list with status polling
+- **Tab 1 (Document Manager):** File upload with drag-drop support, real-time progress bar, document list with multi-select checkboxes, and bulk delete with confirmation
 - **Tab 2 (Chat):** Chat history sidebar (left) + chat window + input (right)
 - State managed with Angular Signals — no external state library
 - Communicates exclusively with the Azure Functions API layer
@@ -24,7 +24,7 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
 - All functions use `AuthorizationLevel.Anonymous` — no API keys required
 - CORS configured to allow the Angular origin
 - Two function files:
-  - `DocumentFunctions` — upload, list, get status
+  - `DocumentFunctions` — upload, list, get status, bulk delete
   - `ChatFunctions` — create session, list sessions, get messages, send message
 - Dependency injection via `Program.cs` using `HostBuilder`
 - All Azure service clients authenticated via `DefaultAzureCredential`
@@ -81,6 +81,28 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
    e. Returns { role: "assistant", content: "..." }
 5. Angular renders the response (with markdown support)
 ```
+
+### Document Deletion
+
+```
+1. User selects one or more documents via checkboxes in the document list
+   (individual row click or "Select all" header checkbox)
+2. "Delete (N)" button appears in the list header; disabled when nothing is selected
+3. User clicks Delete → browser confirm dialog warns deletion is permanent
+4. Angular DELETE /api/documents  { "documentIds": ["id1", "id2", ...] }
+5. Function (DocumentFunctions.DeleteDocuments) iterates each ID:
+   a. Reads DocumentMetadata from Cosmos DB (skips if not found)
+   b. Calls Foundry AgentsClient.DeleteVectorStoreFileAsync → removes file from Vector Store
+   c. Calls Foundry AgentsClient.DeleteFileAsync → removes file from Foundry Files API
+   d. Calls BlobContainerClient.DeleteIfExistsAsync → removes raw file from Blob Storage
+   e. Deletes DocumentMetadata from Cosmos DB (last, so record survives if earlier steps fail)
+6. Angular clears the selection and reloads the document list
+```
+
+**Deletion order rationale:** Cosmos DB is deleted last so the document record remains
+visible if an earlier step (Foundry/Blob) fails — the user can retry deletion.
+Steps (b) and (c) are individually wrapped in try-catch: if a Foundry file was already
+removed, cleanup continues rather than aborting.
 
 ### Chat History
 
