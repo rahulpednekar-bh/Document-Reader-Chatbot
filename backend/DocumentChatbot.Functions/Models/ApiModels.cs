@@ -1,6 +1,11 @@
 namespace DocumentChatbot.Functions.Models;
 
-public record UploadDocumentResponse(string DocumentId, string Status, string FileName);
+public record UploadDocumentResponse(
+    string DocumentId,
+    string Status,
+    string FileName,
+    bool OcrApplied,
+    string? ProcessingNote);
 
 public record CreateSessionRequest(string? Title);
 

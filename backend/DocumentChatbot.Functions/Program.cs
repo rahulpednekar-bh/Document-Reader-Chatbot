@@ -1,3 +1,5 @@
+using Azure;
+using Azure.AI.DocumentIntelligence;
 using Azure.AI.Projects;
 using Azure.Identity;
 using Azure.Storage.Blobs;
@@ -35,6 +37,14 @@ var host = new HostBuilder()
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ICosmosRepository, CosmosRepository>();
+
+        // Azure Document Intelligence (for OCR of scanned PDFs)
+        services.AddSingleton(_ =>
+            new DocumentIntelligenceClient(
+                new Uri(Env("AzureDocumentIntelligence__Endpoint")),
+                new AzureKeyCredential(Env("AzureDocumentIntelligence__Key"))));
+
+        services.AddScoped<IOcrService, OcrService>();
     })
     .Build();
 

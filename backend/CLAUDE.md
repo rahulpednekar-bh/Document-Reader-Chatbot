@@ -21,11 +21,12 @@ DocumentChatbot.Functions/
 │   └── ChatFunctions.cs       POST /api/sessions, GET /api/sessions,
 │                              GET /api/sessions/{id}/messages, POST /api/sessions/{id}/messages
 ├── Services/
-│   ├── IDocumentService / DocumentService   — blob upload + Foundry file indexing
+│   ├── IDocumentService / DocumentService   — blob upload, OCR detection, Foundry file indexing
+│   ├── IOcrService / OcrService             — scanned PDF detection (PdfPig) + OCR extraction (Document Intelligence)
 │   ├── IChatService / ChatService           — Foundry thread/run management
 │   └── ICosmosRepository / CosmosRepository — Cosmos DB generic CRUD
 └── Models/
-    ├── DocumentMetadata.cs    Cosmos DB document record
+    ├── DocumentMetadata.cs    Cosmos DB document record (includes ocrApplied, processingNote)
     ├── ChatSession.cs         Cosmos DB session record
     └── ApiModels.cs           Request/response DTOs
 ```
@@ -43,12 +44,18 @@ See `local.settings.json.example`. Required keys:
 | `BlobStorage__ContainerName` | Blob container name (default: `documents`) |
 | `CosmosDB__ConnectionString` | Cosmos DB connection string |
 | `CosmosDB__DatabaseName` | Database name (default: `docreader`) |
+| `AzureDocumentIntelligence__Endpoint` | Document Intelligence resource endpoint (e.g. `https://<name>.cognitiveservices.azure.com/`) |
+| `AzureDocumentIntelligence__Key` | Document Intelligence API key — **local dev only**; production uses Managed Identity |
 
 ## Key Patterns
 
 - All Azure clients use `DefaultAzureCredential`. Run `az login` locally.
+- The `DocumentIntelligenceClient` uses `AzureKeyCredential` locally (key from `local.settings.json`). In production, replace with `new DefaultAzureCredential()` and assign the `Cognitive Services User` role to the Function App's Managed Identity on the Document Intelligence resource.
 - File validation (type + size) is in `DocumentService.ValidateFile` — both extensions and the 25 MB limit are enforced server-side in addition to client-side.
-- The Foundry `file_search` tool handles all document parsing, chunking, embedding, and retrieval. No Azure AI Search is used.
+- `OcrService.IsPdfScanned()` uses **PdfPig** to sample text from the first 5 pages. If total character count < 50, the PDF is treated as a scanned image.
+- `OcrService.ExtractTextAsync()` calls the **Azure AI Document Intelligence** `prebuilt-read` model and assembles the structured page/line output into a UTF-8 plain-text stream uploaded to Foundry as `{fileName}_ocr.txt`.
+- The original scanned PDF is always preserved in Blob Storage. Only the OCR output is sent to Foundry.
+- `DocumentFunctions.UploadAsync` returns HTTP 422 with `{ code: "ocr_failed" }` when OCR throws.
 - Cosmos DB containers use `id` as the partition key.
 
 ## IMPORTANT

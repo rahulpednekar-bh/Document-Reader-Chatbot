@@ -13,17 +13,20 @@ public class DocumentService : IDocumentService
     private readonly BlobServiceClient _blobServiceClient;
     private readonly AIProjectClient _foundryClient;
     private readonly ICosmosRepository _cosmos;
+    private readonly IOcrService _ocrService;
     private readonly string _containerName;
     private readonly string _vectorStoreId;
 
     public DocumentService(
         BlobServiceClient blobServiceClient,
         AIProjectClient foundryClient,
-        ICosmosRepository cosmos)
+        ICosmosRepository cosmos,
+        IOcrService ocrService)
     {
         _blobServiceClient = blobServiceClient;
         _foundryClient = foundryClient;
         _cosmos = cosmos;
+        _ocrService = ocrService;
         _containerName = Environment.GetEnvironmentVariable("BlobStorage__ContainerName")
             ?? throw new InvalidOperationException("BlobStorage__ContainerName is not configured.");
         _vectorStoreId = Environment.GetEnvironmentVariable("AzureFoundry__VectorStoreId")
@@ -35,8 +38,9 @@ public class DocumentService : IDocumentService
         ValidateFile(fileName, sizeBytes);
 
         var documentId = Guid.NewGuid().ToString();
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
 
-        // Upload to Blob Storage
+        // --- Step 1: Store the original file in Blob Storage (always preserved) ---
         var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
         var blobClient = containerClient.GetBlobClient($"{documentId}/{fileName}");
         await blobClient.UploadAsync(fileStream, new BlobUploadOptions
@@ -45,15 +49,71 @@ public class DocumentService : IDocumentService
         });
         var blobUrl = blobClient.Uri.ToString();
 
-        // Upload to Azure AI Foundry Files API
-        fileStream.Position = 0;
+        // --- Step 2: Determine what to send to Foundry (raw file or OCR text) ---
+        bool ocrApplied = false;
+        string? processingNote = null;
+        Stream foundryStream;
+        string foundryFileName;
+
+        if (extension == ".pdf")
+        {
+            fileStream.Position = 0;
+            bool isScanned = _ocrService.IsPdfScanned(fileStream);
+
+            if (isScanned)
+            {
+                try
+                {
+                    // Run OCR — stream is reset inside IsPdfScanned already
+                    foundryStream = await _ocrService.ExtractTextAsync(fileStream);
+                    foundryFileName = Path.GetFileNameWithoutExtension(fileName) + "_ocr.txt";
+                    ocrApplied = true;
+                    processingNote = "Scanned PDF detected. Text was extracted via OCR before indexing.";
+                }
+                catch (Exception ex)
+                {
+                    // OCR failed — persist failure record and surface a clear error
+                    var failedMetadata = new DocumentMetadata
+                    {
+                        Id = documentId,
+                        FileName = fileName,
+                        BlobUrl = blobUrl,
+                        FoundryFileId = string.Empty,
+                        Status = "failed",
+                        SizeBytes = sizeBytes,
+                        OcrApplied = false,
+                        ProcessingNote = $"OCR processing failed: {ex.Message}"
+                    };
+                    await _cosmos.UpsertAsync("documents", failedMetadata);
+
+                    throw new InvalidOperationException(
+                        $"This PDF appears to be a scanned image but OCR processing failed: {ex.Message}", ex);
+                }
+            }
+            else
+            {
+                // Normal text-based PDF — upload as-is
+                fileStream.Position = 0;
+                foundryStream = fileStream;
+                foundryFileName = fileName;
+            }
+        }
+        else
+        {
+            // DOCX — always upload as-is
+            fileStream.Position = 0;
+            foundryStream = fileStream;
+            foundryFileName = fileName;
+        }
+
+        // --- Step 3: Upload to Azure AI Foundry Files API ---
         var agentsClient = _foundryClient.GetAgentsClient();
-        var uploadedFile = await agentsClient.UploadFileAsync(fileStream, AgentFilePurpose.Agents, fileName);
+        var uploadedFile = await agentsClient.UploadFileAsync(foundryStream, AgentFilePurpose.Agents, foundryFileName);
 
-        // Attach file to the shared Vector Store
-        var data = await agentsClient.CreateVectorStoreFileAsync(_vectorStoreId, uploadedFile.Value.Id);
-        var data1 = await agentsClient.GetVectorStoreAsync(_vectorStoreId);
+        // --- Step 4: Attach file to the shared Vector Store ---
+        await agentsClient.CreateVectorStoreFileAsync(_vectorStoreId, uploadedFile.Value.Id);
 
+        // --- Step 5: Persist metadata to Cosmos DB ---
         var metadata = new DocumentMetadata
         {
             Id = documentId,
@@ -61,12 +121,14 @@ public class DocumentService : IDocumentService
             BlobUrl = blobUrl,
             FoundryFileId = uploadedFile.Value.Id,
             Status = "indexed",
-            SizeBytes = sizeBytes
+            SizeBytes = sizeBytes,
+            OcrApplied = ocrApplied,
+            ProcessingNote = processingNote
         };
 
         await _cosmos.UpsertAsync("documents", metadata);
 
-        return new UploadDocumentResponse(documentId, metadata.Status, fileName);
+        return new UploadDocumentResponse(documentId, metadata.Status, fileName, ocrApplied, processingNote);
     }
 
     public async Task<IReadOnlyList<DocumentMetadata>> ListAsync() =>

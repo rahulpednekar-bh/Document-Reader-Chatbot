@@ -42,6 +42,14 @@ public class DocumentFunctions
         {
             return new BadRequestObjectResult(new { error = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError(ex, "OCR processing failed during document upload.");
+            return new ObjectResult(new { error = ex.Message, code = "ocr_failed" })
+            {
+                StatusCode = StatusCodes.Status422UnprocessableEntity
+            };
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during document upload.");

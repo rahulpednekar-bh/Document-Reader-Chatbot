@@ -4,6 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
+import { HttpErrorResponse } from '@angular/common/http';
 import { DocumentMetadata, UploadProgress } from '../../../core/models/document.model';
 import { DocumentService } from '../../../core/services/document.service';
 
@@ -159,11 +160,10 @@ export class FileUploadComponent {
 
     this.documentService.upload(file).subscribe({
       next: progress => this.uploadProgress.set(progress),
-      error: () => this.uploadProgress.set({
-        percent: 0,
-        status: 'error',
-        error: 'Upload failed. Please try again.'
-      }),
+      error: (httpError: HttpErrorResponse) => {
+        const errorMessage = this.resolveUploadError(httpError);
+        this.uploadProgress.set({ percent: 0, status: 'error', error: errorMessage });
+      },
       complete: () => {
         // Reload the document list entry via parent
         this.documentService.list().subscribe(docs => {
@@ -172,5 +172,25 @@ export class FileUploadComponent {
         });
       }
     });
+  }
+
+  private resolveUploadError(httpError: HttpErrorResponse): string {
+    // 422 — OCR processing failed for a scanned PDF
+    if (httpError.status === 422) {
+      const body = httpError.error as { error?: string; code?: string } | null;
+      if (body?.code === 'ocr_failed') {
+        return 'OCR processing failed for this scanned PDF. Please try again or use a text-based PDF.';
+      }
+      return body?.error ?? 'This file could not be processed. Please try a different file.';
+    }
+
+    // 400 — validation error (file type / size)
+    if (httpError.status === 400) {
+      const body = httpError.error as { error?: string } | null;
+      return body?.error ?? 'Invalid file. Please check the file type and size.';
+    }
+
+    // Fallback for 500 and network errors
+    return 'Upload failed. Please try again.';
   }
 }

@@ -17,6 +17,9 @@ A web-based AI chatbot system that enables users to upload business documents an
 | FR-01-5 | Invalid file types must be rejected with a clear error message |
 | FR-01-6 | Files exceeding 25 MB must be rejected before upload begins |
 | FR-01-7 | Uploaded documents are listed with their processing status (Pending → Processing → Ready) |
+| FR-01-8 | Scanned PDFs (image-only, no embedded text layer) must be automatically processed with OCR before indexing, without requiring any action from the user |
+| FR-01-9 | Documents that were processed via OCR must be visually distinguished in the document list with an "OCR Applied" badge |
+| FR-01-10 | If OCR processing fails, the document must be marked as "Failed" with a descriptive error message visible to the user |
 
 ### FR-02: AI Chat Interface (Tab 2)
 
@@ -41,9 +44,11 @@ A web-based AI chatbot system that enables users to upload business documents an
 | NFR-06 | Document storage must use Azure Blob Storage |
 | NFR-07 | All dependencies must be open source |
 | NFR-08 | Code must follow SOLID and YAGNI principles |
+| NFR-09 | OCR processing for scanned PDFs must use Azure AI Document Intelligence (`prebuilt-read` model) |
 
 ## Constraints
 
 - Documents are limited to PDF and DOCX formats only
 - Individual document size may not exceed 25 MB
 - Chat responses must be grounded in uploaded document content only
+- Scanned PDFs are supported via automatic OCR; the original file is always preserved in Blob Storage

@@ -4,7 +4,9 @@
 
 The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system built on Azure. Users upload documents through a web interface, which are indexed by an AI agent. A chat interface then allows users to ask questions answered from document content.
 
-**Key architectural choice:** Azure AI Foundry Agents API is used as the AI layer. The Agents API provides built-in file parsing, vectorization, semantic search (via the `file_search` tool), and thread-based conversation management — eliminating the need for custom Azure AI Search or Azure AI Document Intelligence resources.
+**Key architectural choice:** Azure AI Foundry Agents API is used as the AI layer. The Agents API provides built-in file parsing, vectorization, semantic search (via the `file_search` tool), and thread-based conversation management — eliminating the need for custom Azure AI Search resources.
+
+**Scanned PDF support:** Azure AI Foundry's `file_search` tool only reads embedded text layers from PDFs. Scanned PDFs (image-only) contain no text layer, so Foundry would index nothing. To handle this, the backend runs an automatic OCR pipeline using **Azure AI Document Intelligence** (`prebuilt-read` model) whenever a scanned PDF is detected, extracting text before the file reaches Foundry.
 
 ## Components
 
@@ -13,6 +15,8 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
 - Hosted on **Azure Static Web Apps**
 - Two-tab layout built with Angular Material
 - **Tab 1 (Document Manager):** File upload with drag-drop support, real-time progress bar, document list with multi-select checkboxes, and bulk delete with confirmation
+  - Documents processed via OCR show an **"OCR Applied"** badge with a tooltip
+  - Documents that failed processing show a **"Failed"** badge with a tooltip explaining the reason
 - **Tab 2 (Chat):** Chat history sidebar (left) + chat window + input (right)
 - State managed with Angular Signals — no external state library
 - Communicates exclusively with the Azure Functions API layer
@@ -26,8 +30,20 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
 - Two function files:
   - `DocumentFunctions` — upload, list, get status, bulk delete
   - `ChatFunctions` — create session, list sessions, get messages, send message, delete session
+- Three service files relevant to document upload:
+  - `DocumentService` — orchestrates blob upload, OCR detection, and Foundry indexing
+  - `OcrService` — scanned PDF detection (PdfPig) and OCR extraction (Document Intelligence)
+  - `CosmosRepository` — generic Cosmos DB CRUD
 - Dependency injection via `Program.cs` using `HostBuilder`
 - All Azure service clients authenticated via `DefaultAzureCredential`
+
+### Azure AI Document Intelligence
+
+- Used exclusively for **OCR of scanned PDFs**
+- Model: `prebuilt-read` — layout-aware OCR across all pages, returns page/line structured text
+- Only invoked when `OcrService.IsPdfScanned()` returns `true` for a `.pdf` upload
+- The extracted plain-text content (a `.txt` file) is what gets uploaded to Foundry — not the original scanned PDF
+- DOCX files are never routed through OCR (DOCX is always XML-based with embedded text)
 
 ### Azure AI Foundry Agents API
 
@@ -39,20 +55,22 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
 
 ### Azure Blob Storage
 
-- Stores the raw uploaded files for management purposes (listing, metadata)
+- Stores the **original** raw uploaded files for management purposes (listing, metadata, audit)
+- Scanned PDFs are stored as uploaded — the OCR output is what is sent to Foundry, but the original scan is preserved in Blob
 - One container: `documents` (private)
-- Blob metadata records: file name, size, upload timestamp, status, and the corresponding Foundry File ID
 
 ### Azure Cosmos DB (NoSQL)
 
 - Two containers:
-  - `documents` — document metadata: `{id, fileName, blobUrl, foundryFileId, status, uploadedAt, sizeBytes}`
+  - `documents` — document metadata: `{id, fileName, blobUrl, foundryFileId, status, uploadedAt, sizeBytes, ocrApplied, processingNote}`
   - `sessions` — chat session metadata: `{id, title, threadId, createdAt}`
+- `ocrApplied` (bool) — `true` when the document was a scanned PDF processed through OCR before indexing
+- `processingNote` (string, nullable) — human-readable note; populated when OCR is applied or when upload fails
 - Session message content is retrieved on demand from Foundry Threads, not stored redundantly in Cosmos DB
 
 ## Data Flows
 
-### Document Upload
+### Document Upload — Text-Based PDF or DOCX
 
 ```
 1. User selects file in Angular (validates: type = .pdf/.docx, size ≤ 25 MB)
@@ -60,11 +78,49 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
 3. Function:
    a. Re-validates file server-side
    b. Uploads stream to Azure Blob Storage → gets blobUrl
-   c. Uploads file to Azure AI Foundry Files API → gets foundryFileId
-   d. Attaches foundryFileId to the shared Vector Store
-   e. Saves DocumentMetadata to Cosmos DB (status = "indexed")
-   f. Returns { documentId, status }
+   c. [PDF only] OcrService.IsPdfScanned() → false (text layer present)
+   d. Uploads original file stream to Azure AI Foundry Files API → gets foundryFileId
+   e. Attaches foundryFileId to the shared Vector Store
+   f. Saves DocumentMetadata to Cosmos DB (status="indexed", ocrApplied=false)
+   g. Returns { documentId, status, ocrApplied: false }
 4. Angular updates document list; status badge shows "Ready"
+```
+
+### Document Upload — Scanned PDF
+
+```
+1. User selects scanned PDF in Angular (passes validation: it is .pdf, ≤ 25 MB)
+2. Angular POST /api/documents/upload (multipart/form-data)
+3. Function:
+   a. Re-validates file server-side
+   b. Uploads original scan to Azure Blob Storage → gets blobUrl (original preserved)
+   c. OcrService.IsPdfScanned() → true (PdfPig finds < 50 chars in first 5 pages)
+   d. OcrService.ExtractTextAsync() → calls Document Intelligence prebuilt-read model
+      - Document Intelligence performs OCR across all pages
+      - Returns page/line structured text
+      - OcrService assembles a UTF-8 plain-text MemoryStream
+   e. Uploads the OCR text stream (as {fileName}_ocr.txt) to Foundry Files API
+   f. Attaches foundryFileId to the shared Vector Store
+   g. Saves DocumentMetadata to Cosmos DB (status="indexed", ocrApplied=true,
+      processingNote="Scanned PDF detected. Text was extracted via OCR before indexing.")
+   h. Returns { documentId, status, ocrApplied: true, processingNote }
+4. Angular updates document list; shows "Ready" badge + blue "OCR Applied" badge
+```
+
+### Document Upload — OCR Failure
+
+```
+1–3c. Same as scanned PDF flow above.
+   d. OcrService.ExtractTextAsync() throws (e.g. Document Intelligence quota exceeded,
+      network timeout, invalid PDF bytes)
+   e. DocumentService catches exception:
+      - Saves DocumentMetadata to Cosmos DB (status="failed",
+        processingNote="OCR processing failed: {exception message}")
+      - Throws InvalidOperationException with user-readable message
+   f. DocumentFunctions catches InvalidOperationException →
+      returns HTTP 422 { error: "...", code: "ocr_failed" }
+4. Angular shows error in progress bar:
+   "OCR processing failed for this scanned PDF. Please try again or use a text-based PDF."
 ```
 
 ### Chat Session
@@ -108,7 +164,8 @@ The Document Reader Chatbot is a RAG (Retrieval Augmented Generation) system bui
    a. Reads DocumentMetadata from Cosmos DB (skips if not found)
    b. Calls Foundry AgentsClient.DeleteVectorStoreFileAsync → removes file from Vector Store
    c. Calls Foundry AgentsClient.DeleteFileAsync → removes file from Foundry Files API
-   d. Calls BlobContainerClient.DeleteIfExistsAsync → removes raw file from Blob Storage
+      (For OCR-processed documents this is the _ocr.txt file that was indexed)
+   d. Calls BlobContainerClient.DeleteIfExistsAsync → removes original file from Blob Storage
    e. Deletes DocumentMetadata from Cosmos DB (last, so record survives if earlier steps fail)
 6. Angular clears the selection and reloads the document list
 ```
@@ -136,6 +193,8 @@ citations: [
 ]
 ```
 
+**Note:** For scanned PDFs processed via OCR, citations will reference the generated `_ocr.txt` file name (e.g. `scan_ocr.txt`) since that is the file indexed in Foundry.
+
 **Extraction process (backend):**
 1. Each `MessageTextContent` exposes an `Annotations` list containing `MessageTextFileCitationAnnotation` items
 2. Annotations are deduplicated by `FileId` (same file cited multiple times → one citation entry)
@@ -148,6 +207,7 @@ citations: [
 ## Security
 
 - All backend-to-Azure-service calls use Managed Identity (`DefaultAzureCredential`) — no secrets in code or config
+- The Document Intelligence client uses `AzureKeyCredential` locally (key from `local.settings.json`); in production, switch to `DefaultAzureCredential` with `Cognitive Services User` role on the Managed Identity
 - Blob container is private — no public access
 - Frontend origin is whitelisted in Function CORS configuration
 - File type and size validation enforced on both client and server
@@ -159,5 +219,6 @@ citations: [
 | Angular SPA | Azure Static Web Apps |
 | API | Azure Functions (Consumption) |
 | AI Agent | Azure AI Foundry |
+| OCR (scanned PDFs) | Azure AI Document Intelligence |
 | Documents | Azure Blob Storage |
 | Metadata | Azure Cosmos DB (NoSQL) |

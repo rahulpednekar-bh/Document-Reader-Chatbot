@@ -24,4 +24,18 @@ public class DocumentMetadata
 
     [JsonProperty("sizeBytes")]
     public long SizeBytes { get; set; }
+
+    /// <summary>
+    /// True when the document was a scanned PDF and was processed through OCR
+    /// before being indexed. The text extracted by OCR was uploaded to Foundry.
+    /// </summary>
+    [JsonProperty("ocrApplied")]
+    public bool OcrApplied { get; set; }
+
+    /// <summary>
+    /// Human-readable note attached when processing fails or when OCR was applied.
+    /// Null for normal text-based documents.
+    /// </summary>
+    [JsonProperty("processingNote")]
+    public string? ProcessingNote { get; set; }
 }

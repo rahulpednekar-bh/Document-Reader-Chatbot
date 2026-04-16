@@ -88,7 +88,40 @@ az cosmosdb keys list \
 
 ---
 
-## 4. Azure AI Foundry Project
+## 4. Azure AI Document Intelligence
+
+This resource is required for automatic OCR of scanned PDFs. If all your documents contain a text layer, this step can be skipped — but any scanned PDF uploads will fail at the OCR step.
+
+```bash
+az cognitiveservices account create \
+  --name docreader-docintellect \
+  --resource-group rg-docreader \
+  --kind FormRecognizer \
+  --sku S0 \
+  --location eastus \
+  --yes
+```
+
+**Copy:** Endpoint and key for `local.settings.json`:
+```bash
+# Endpoint
+az cognitiveservices account show \
+  --name docreader-docintellect \
+  --resource-group rg-docreader \
+  --query properties.endpoint -o tsv
+
+# Key (used locally; production uses Managed Identity instead)
+az cognitiveservices account keys list \
+  --name docreader-docintellect \
+  --resource-group rg-docreader \
+  --query key1 -o tsv
+```
+
+> **Production note:** In Azure, the Function App's Managed Identity is granted the `Cognitive Services User` role (see step 5). The key is only needed for local development via `local.settings.json`.
+
+---
+
+## 5. Azure AI Foundry Project
 
 > Azure AI Foundry is provisioned through the Azure Portal or AI Foundry Studio.
 
@@ -112,7 +145,7 @@ az cosmosdb keys list \
 
 ---
 
-## 5. Azure Functions App
+## 6. Azure Functions App
 
 ```bash
 # Storage for Functions runtime (can reuse the one above)
@@ -159,6 +192,14 @@ az role assignment create \
   --assignee $PRINCIPAL_ID \
   --role "Cognitive Services User" \
   --scope /subscriptions/<sub-id>/resourceGroups/rg-docreader
+
+# Azure AI Document Intelligence: Cognitive Services User
+# (The scope above covers the whole resource group, which includes Document Intelligence.
+#  If you prefer a narrower scope, target the resource directly:)
+az role assignment create \
+  --assignee $PRINCIPAL_ID \
+  --role "Cognitive Services User" \
+  --scope /subscriptions/<sub-id>/resourceGroups/rg-docreader/providers/Microsoft.CognitiveServices/accounts/docreader-docintellect
 ```
 
 ### Configure App Settings
@@ -174,12 +215,15 @@ az functionapp config appsettings set \
     "BlobStorage__AccountName=<storage-account-name>" \
     "BlobStorage__ContainerName=documents" \
     "CosmosDB__AccountEndpoint=https://<cosmos-account-name>.documents.azure.com:443/" \
-    "CosmosDB__DatabaseName=docreader"
+    "CosmosDB__DatabaseName=docreader" \
+    "AzureDocumentIntelligence__Endpoint=https://docreader-docintellect.cognitiveservices.azure.com/"
 ```
+
+> In Azure (production), `AzureDocumentIntelligence__Key` is **not** set — the Function App uses Managed Identity (`DefaultAzureCredential`) to authenticate with Document Intelligence via the `Cognitive Services User` role assigned above. The key is only used in `local.settings.json` for local development.
 
 ---
 
-## 6. Azure Static Web Apps (Frontend)
+## 7. Azure Static Web Apps (Frontend)
 
 1. In Azure Portal → Create **Static Web App**
 2. Link to your GitHub repository
@@ -192,7 +236,7 @@ The first push to your linked branch will trigger a build and deploy.
 
 ---
 
-## 6. `local.settings.json` Reference
+## 8. `local.settings.json` Reference
 
 After completing the steps above, populate `backend/DocumentChatbot.Functions/local.settings.json`:
 
@@ -208,7 +252,9 @@ After completing the steps above, populate `backend/DocumentChatbot.Functions/lo
     "BlobStorage__ConnectionString": "<storage-connection-string>",
     "BlobStorage__ContainerName": "documents",
     "CosmosDB__ConnectionString": "<cosmos-db-connection-string>",
-    "CosmosDB__DatabaseName": "docreader"
+    "CosmosDB__DatabaseName": "docreader",
+    "AzureDocumentIntelligence__Endpoint": "https://<your-resource-name>.cognitiveservices.azure.com/",
+    "AzureDocumentIntelligence__Key": "<your-document-intelligence-key>"
   },
   "Host": {
     "LocalHttpPort": 7071,

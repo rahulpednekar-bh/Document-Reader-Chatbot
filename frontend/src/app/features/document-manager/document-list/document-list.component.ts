@@ -4,12 +4,13 @@ import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { DocumentMetadata } from '../../../core/models/document.model';
 
 @Component({
   selector: 'app-document-list',
   standalone: true,
-  imports: [CommonModule, MatListModule, MatIconModule, MatChipsModule, MatCheckboxModule, DatePipe],
+  imports: [CommonModule, MatListModule, MatIconModule, MatChipsModule, MatCheckboxModule, MatTooltipModule, DatePipe],
   template: `
     @if (documents.length === 0) {
       <p class="empty-state">No documents uploaded yet.</p>
@@ -42,10 +43,28 @@ import { DocumentMetadata } from '../../../core/models/document.model';
               {{ doc.sizeBytes | number }} bytes &bull;
               {{ doc.uploadedAt | date:'medium' }}
             </span>
-            <span matListItemMeta>
+            <span matListItemMeta class="chip-group">
               <mat-chip [color]="statusColor(doc.status)" highlighted>
-                {{ doc.status }}
+                {{ statusLabel(doc.status) }}
               </mat-chip>
+              @if (doc.ocrApplied) {
+                <mat-chip
+                  color="primary"
+                  highlighted
+                  class="ocr-chip"
+                  [matTooltip]="'This scanned PDF was processed with OCR to extract text before indexing.'">
+                  <mat-icon matChipAvatar>document_scanner</mat-icon>
+                  OCR Applied
+                </mat-chip>
+              }
+              @if (doc.status === 'failed' && doc.processingNote) {
+                <mat-icon
+                  color="warn"
+                  class="info-icon"
+                  [matTooltip]="doc.processingNote">
+                  info
+                </mat-icon>
+              }
             </span>
           </mat-list-item>
         }
@@ -69,6 +88,22 @@ import { DocumentMetadata } from '../../../core/models/document.model';
     }
     .document-row:hover {
       background: #f5f5f5;
+    }
+    .chip-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ocr-chip {
+      background-color: #1565c0 !important;
+      color: white !important;
+      font-size: 11px;
+    }
+    .info-icon {
+      font-size: 18px;
+      height: 18px;
+      width: 18px;
+      cursor: help;
     }
   `]
 })
@@ -109,6 +144,15 @@ export class DocumentListComponent {
       case 'processing': return 'accent';
       case 'failed': return 'warn';
       default: return 'accent';
+    }
+  }
+
+  statusLabel(status: string): string {
+    switch (status) {
+      case 'indexed': return 'Ready';
+      case 'processing': return 'Processing';
+      case 'failed': return 'Failed';
+      default: return status;
     }
   }
 }
